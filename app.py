@@ -9,9 +9,9 @@ BASE_DIR = Path(__file__).parent
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-app.config['SQLALCHEMY_DATABASE_URI'] = \
-    os.environ.get('DATABASE_URL').replace("://", "ql://", 1) \
-    or f"sqlite:///{BASE_DIR / 'main.db'}"
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("://", "ql://", 1) if os.environ.get(
+    'DATABASE_URL') else None \
+                         or f"sqlite:///{BASE_DIR / 'main.db'}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -21,17 +21,18 @@ migrate = Migrate(app, db)
 class AuthorModel(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(32), nullable=False)
-    surname = db.Column(db.String(32), nullable=False, server_default='Ivanov')
+    surname = db.Column(db.String(64), nullable=False, server_default="Иванов")
     quotes = db.relationship('QuoteModel', backref='author', lazy='dynamic', cascade="all, delete-orphan")
 
-    def __init__(self, name):
+    def __init__(self, name, surname):
         self.name = name
         self.surname = surname
 
     def to_dict(self):
         return {
             "id": self.id,
-            "name": self.name
+            "name": self.name,
+            "surname": self.surname,
         }
 
 
@@ -54,14 +55,14 @@ class QuoteModel(db.Model):
 
 @app.errorhandler(404)
 def not_found(e):
-    response = {'status': 404, 'error': 'not found'}
+    response = {'status': 404, 'error': e.description}
     return response, 404
 
 
-def get_object_or_404(model, object_id):
+def get_object_or_404(model: db.Model, object_id):
     object = model.query.get(object_id)
     if object is None:
-        abort(404, f"Author with id={object_id} not found")
+        abort(404, description=f"Author with id={object_id} not found")
     return object
 
 
@@ -85,14 +86,14 @@ def get_author_by_id(author_id):
 @app.route("/authors", methods=["POST"])
 def create_author():
     author_data = request.json
-    #author = AuthorModel(author_data["name"], author_data['surname'])
-    author = AuthorModel(**author_data)  #распаковка в виде словаря(ключ:значение)
+    # author = AuthorModel(author_data["name"], author_data["surname"], ...)
+    author = AuthorModel(**author_data)
     db.session.add(author)
     try:
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        return f'Author name must be unique', 400
+        return f"Author name must be unique", 400
     return author.to_dict(), 201
 
 
